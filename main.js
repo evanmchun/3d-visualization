@@ -97,6 +97,8 @@ function calculateScreenProjection() {
     
     curvePoints.forEach(point => {
         const vector = point.clone();
+        // Transform point to world space
+        vector.applyMatrix4(lineGroup.matrixWorld);
         vector.project(camera);
         screenPoints.push(new THREE.Vector2(
             (vector.x + 1) * window.innerWidth / 2,
@@ -117,7 +119,8 @@ function calculateScreenProjection() {
     return {
         width: maxX - minX,
         height: maxY - minY,
-        center: new THREE.Vector2((minX + maxX) / 2, (minY + maxY) / 2)
+        center: new THREE.Vector2((minX + maxX) / 2, (minY + maxY) / 2),
+        minX, maxX, minY, maxY
     };
 }
 
@@ -165,11 +168,83 @@ window.addEventListener('resize', () => {
     centerCurveInCameraSpace();
 });
 
-// Animation loop
+// Create HTML overlay for screen-space indicators
+const overlay = document.createElement('div');
+overlay.style.position = 'fixed';
+overlay.style.top = '20px';
+overlay.style.left = '50%';
+overlay.style.transform = 'translateX(-50%)';
+overlay.style.padding = '15px 25px';
+overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+overlay.style.border = '2px solid rgba(255, 255, 255, 0.5)';
+overlay.style.color = 'white';
+overlay.style.fontFamily = 'Arial, sans-serif';
+overlay.style.fontSize = '18px';
+overlay.style.fontWeight = 'bold';
+overlay.style.borderRadius = '8px';
+overlay.style.zIndex = '1000';
+overlay.style.pointerEvents = 'none';
+container.appendChild(overlay);
+
+// Create a frame to show screen bounds
+const createScreenFrame = () => {
+    const geometry = new THREE.BufferGeometry();
+    const material = new THREE.LineBasicMaterial({ 
+        color: 0xffff00,
+        transparent: true,
+        opacity: 0.8,
+        depthTest: false,
+        linewidth: 2
+    });
+    const line = new THREE.Line(geometry, material);
+    scene.add(line);
+    return line;
+};
+
+const screenFrame = createScreenFrame();
+
+// Function to update screen-space indicators
+function updateScreenSpaceIndicators(projection) {
+    const screenSize = Math.min(window.innerWidth, window.innerHeight);
+    const visibleSize = Math.max(projection.width, projection.height);
+    const screenPercentage = (visibleSize / screenSize) * 100;
+    
+    overlay.innerHTML = `Screen Coverage: ${screenPercentage.toFixed(1)}%<br>Size: ${Math.round(projection.width)} × ${Math.round(projection.height)}px`;
+    
+    // Update screen frame
+    const positions = [];
+    const framePoints = [
+        new THREE.Vector3(projection.minX, projection.minY, 0),
+        new THREE.Vector3(projection.maxX, projection.minY, 0),
+        new THREE.Vector3(projection.maxX, projection.maxY, 0),
+        new THREE.Vector3(projection.minX, projection.maxY, 0),
+        new THREE.Vector3(projection.minX, projection.minY, 0)
+    ];
+    
+    framePoints.forEach(point => {
+        const vector = new THREE.Vector3(
+            (point.x / window.innerWidth) * 2 - 1,
+            -(point.y / window.innerHeight) * 2 + 1,
+            0
+        );
+        vector.unproject(camera);
+        positions.push(vector.x, vector.y, vector.z);
+    });
+    
+    screenFrame.geometry.setAttribute('position', 
+        new THREE.Float32BufferAttribute(positions, 3));
+    screenFrame.geometry.attributes.position.needsUpdate = true;
+}
+
+// Update the animation loop
 function animate() {
     requestAnimationFrame(animate);
     controls.update();
+    
+    const projection = calculateScreenProjection();
     updateCurveVisibility();
+    updateScreenSpaceIndicators(projection);
+    
     renderer.render(scene, camera);
 }
 

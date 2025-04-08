@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>3D Curve Visualization</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        #container { width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r159/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.159.0/examples/jsm/controls/OrbitControls.js"></script>
+    <script>
+        // Initialize Three.js scene, camera, and renderer
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000000); // Black background for better contrast
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('container').appendChild(renderer.domElement);
+
+        // Add orbit controls
+        const controls = new THREE.OrbitControls.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.minDistance = 0.1;
+        controls.maxDistance = 10;
+
+        // Add grid helper for better orientation
+        const gridHelper = new THREE.GridHelper(10, 10);
+        scene.add(gridHelper);
+
+        // Create a 3D curve with points in all dimensions
+        const curve = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(-1, -1, 0),
+            new THREE.Vector3(-0.5, 1, 0),
+            new THREE.Vector3(0, -0.5, 0),
+            new THREE.Vector3(0.5, 1, 0),
+            new THREE.Vector3(1, -1, 0)
+        ]);
+
+        // Create geometry from the curve with many points for smoothness
+        const points = curve.getPoints(500);
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+
+        // Create multiple lines with slight offsets for better visibility
+        const createOffsetLine = (offset) => {
+            const material = new THREE.LineBasicMaterial({
+                color: 0xff0000, // Bright red color
+                linewidth: 3,
+                transparent: true,
+                opacity: 1,
+            });
+            const line = new THREE.Line(geometry, material);
+            line.position.z = offset;
+            return line;
+        };
+
+        // Group the lines together
+        const lineGroup = new THREE.Group();
+
+        // Create multiple offset lines for better visibility
+        const offsets = [0, 0.05, -0.05, 0.1, -0.1];
+        offsets.forEach(offset => {
+            lineGroup.add(createOffsetLine(offset));
+        });
+
+        scene.add(lineGroup);
+
+        // Add ambient light
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1);
+        scene.add(ambientLight);
+
+        // Position camera
+        camera.position.set(3, 3, 3);
+        camera.lookAt(0, 0, 0);
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        animate();
+    </script>
+</body>
+</html> 
