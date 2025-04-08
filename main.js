@@ -1,26 +1,38 @@
+// Check if Three.js is loaded
+console.log('Three.js version:', THREE ? THREE.REVISION : 'not loaded');
+
 // Initialize Three.js scene, camera, and renderer
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x111111); // Darker background for better contrast
 
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 1000); // Adjusted near plane
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 1000);
+// Set initial camera position
+camera.position.set(10, 10, 10);
+camera.lookAt(0, 0, 0);
+console.log('Camera initialized:', camera);
+
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-document.getElementById('container').appendChild(renderer.domElement);
+console.log('Renderer initialized:', renderer);
+
+const container = document.getElementById('container');
+console.log('Container element:', container);
+container.appendChild(renderer.domElement);
 
 // Add orbit controls
-const controls = new THREE.OrbitControls(camera, renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
-controls.minDistance = 0.01;
-controls.maxDistance = 100;
+controls.minDistance = 2;
+controls.maxDistance = 50;
 
 // Create a 3D curve with points in all dimensions
 const curve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(-0.05, -0.05, 0),
-    new THREE.Vector3(-0.025, 0.05, 0),
-    new THREE.Vector3(0, -0.025, 0),
-    new THREE.Vector3(0.025, 0.05, 0),
-    new THREE.Vector3(0.05, -0.05, 0)
+    new THREE.Vector3(-2, -2, 0),
+    new THREE.Vector3(-1, 2, 0),
+    new THREE.Vector3(0, -1, 0),
+    new THREE.Vector3(1, 2, 0),
+    new THREE.Vector3(2, -2, 0)
 ]);
 
 // Create geometry from the curve with many points for smoothness
@@ -31,7 +43,7 @@ const geometry = new THREE.BufferGeometry().setFromPoints(points);
 const createOffsetLine = (offset) => {
     const material = new THREE.LineBasicMaterial({
         color: 0x00ff88,
-        linewidth: 3,
+        linewidth: 1,
         transparent: true,
         opacity: 1,
     });
@@ -44,14 +56,20 @@ const createOffsetLine = (offset) => {
 const lineGroup = new THREE.Group();
 
 // Create multiple offset lines for better visibility
-const offsets = [0, 0.00005, -0.00005, 0.0001, -0.0001];
+const offsets = [];
+const numLines = 20; // More lines for better visibility
+const offsetStep = 0.05; // Larger offset
+for (let i = 0; i < numLines; i++) {
+    offsets.push(i * offsetStep);
+    if (i > 0) offsets.push(-i * offsetStep);
+}
+
 offsets.forEach(offset => {
     lineGroup.add(createOffsetLine(offset));
 });
 
-// Apply a fixed small scale
-const fixedScale = 0.1;
-lineGroup.scale.set(fixedScale, fixedScale, fixedScale);
+// No need for additional scaling since we made the curve bigger
+lineGroup.scale.set(1, 1, 1);
 scene.add(lineGroup);
 
 // Add ambient light
@@ -72,21 +90,71 @@ lights.forEach(light => {
     scene.add(directionalLight);
 });
 
-// Function to center the curve
-function centerCurve() {
-    // Calculate bounding box
-    const boundingBox = new THREE.Box3().setFromObject(lineGroup);
+// Function to calculate screen projection for visibility adjustments
+function calculateScreenProjection() {
+    const curvePoints = curve.getPoints(100);
+    const screenPoints = [];
     
-    // Calculate center of bounding box
-    const center = new THREE.Vector3();
-    boundingBox.getCenter(center);
+    curvePoints.forEach(point => {
+        const vector = point.clone();
+        vector.project(camera);
+        screenPoints.push(new THREE.Vector2(
+            (vector.x + 1) * window.innerWidth / 2,
+            (-vector.y + 1) * window.innerHeight / 2
+        ));
+    });
     
-    // Reset position
-    lineGroup.position.set(0, 0, 0);
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
     
-    // Position camera to view the entire curve
-    camera.position.set(0.1, 0.1, 0.1); // Moved camera closer
-    camera.lookAt(0, 0, 0);
+    screenPoints.forEach(point => {
+        minX = Math.min(minX, point.x);
+        maxX = Math.max(maxX, point.x);
+        minY = Math.min(minY, point.y);
+        maxY = Math.max(maxY, point.y);
+    });
+    
+    return {
+        width: maxX - minX,
+        height: maxY - minY,
+        center: new THREE.Vector2((minX + maxX) / 2, (minY + maxY) / 2)
+    };
+}
+
+// Function to update curve visibility
+function updateCurveVisibility() {
+    const projection = calculateScreenProjection();
+    const screenSize = Math.min(window.innerWidth, window.innerHeight);
+    const visibleSize = Math.max(projection.width, projection.height);
+    const screenPercentage = visibleSize / screenSize;
+    const baseOpacity = Math.min(1, Math.max(0.3, 1 - screenPercentage));
+    
+    lineGroup.children.forEach((line, index) => {
+        const layerFactor = 1 - (index / lineGroup.children.length) * 0.3;
+        line.material.opacity = baseOpacity * layerFactor;
+    });
+}
+
+// Function to center and scale the curve
+function centerCurveInCameraSpace() {
+    const projection = calculateScreenProjection();
+    const targetScreenCoverage = 0.5;
+    const screenSize = Math.min(window.innerWidth, window.innerHeight);
+    const currentSize = Math.max(projection.width, projection.height);
+    const scale = (screenSize * targetScreenCoverage) / currentSize;
+    
+    lineGroup.scale.multiplyScalar(scale);
+    
+    const center = new THREE.Vector3(
+        (projection.center.x / window.innerWidth) * 2 - 1,
+        -(projection.center.y / window.innerHeight) * 2 + 1,
+        0
+    );
+    center.unproject(camera);
+    lineGroup.position.sub(center);
+    
+    controls.target.copy(lineGroup.position);
+    controls.update();
 }
 
 // Handle window resize
@@ -94,17 +162,17 @@ window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
-    centerCurve();
+    centerCurveInCameraSpace();
 });
-
-// Center the curve initially
-centerCurve();
 
 // Animation loop
 function animate() {
     requestAnimationFrame(animate);
     controls.update();
+    updateCurveVisibility();
     renderer.render(scene, camera);
 }
 
+// Initial setup
+centerCurveInCameraSpace();
 animate(); 
